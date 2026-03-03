@@ -164,7 +164,7 @@ class TimeEntryResponse(BaseModel):
     """Schema for time entry response."""
     id: str
     user_id: str
-    branch_id: str
+    branch_id: Optional[str] = None
     team_id: Optional[str] = None
     job_site_id: Optional[str] = None
     date: str

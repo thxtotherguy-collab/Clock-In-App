@@ -1,34 +1,30 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* Additional App Styles */
+
+.App {
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+/* Ensure proper mobile viewport */
+@supports (height: 100dvh) {
+  .App {
+    min-height: 100dvh;
+  }
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+/* Prevent zoom on input focus (iOS) */
+input[type="email"],
+input[type="password"],
+input[type="text"] {
+  font-size: 16px;
 }
 
-.App-link {
-    color: #61dafb;
+/* Loading animation */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+.App > div {
+  animation: fadeIn 0.3s ease;
 }

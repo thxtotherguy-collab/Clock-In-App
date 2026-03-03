@@ -17,7 +17,7 @@ db_instance = Database()
 
 async def connect_to_mongo(mongo_url: str, db_name: str):
     """Initialize MongoDB connection."""
-    logger.info(f"Connecting to MongoDB...")
+    logger.info("Connecting to MongoDB...")
     db_instance.client = AsyncIOMotorClient(mongo_url)
     db_instance.db = db_instance.client[db_name]
     

@@ -16,6 +16,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 from core.database import connect_to_mongo, close_mongo_connection, get_database
 from core.config import get_settings
+from routers import auth_router, attendance_router, gps_router
 
 settings = get_settings()
 
@@ -161,8 +162,11 @@ async def get_collections_schema():
     }
 
 
-# Include the router
+# Include routers
 app.include_router(api_router)
+app.include_router(auth_router, prefix="/api")
+app.include_router(attendance_router, prefix="/api")
+app.include_router(gps_router, prefix="/api")
 
 # CORS middleware
 app.add_middleware(

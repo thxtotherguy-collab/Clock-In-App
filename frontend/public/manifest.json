@@ -1,0 +1,38 @@
+{
+  "short_name": "WFM Clock",
+  "name": "Workforce Clock",
+  "description": "Clock in/out with GPS tracking",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0F172A",
+  "background_color": "#0F172A",
+  "scope": "/",
+  "categories": ["business", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Clock In",
+      "url": "/?action=clockin",
+      "description": "Quick clock in"
+    },
+    {
+      "name": "Clock Out",
+      "url": "/?action=clockout",
+      "description": "Quick clock out"
+    }
+  ]
+}
