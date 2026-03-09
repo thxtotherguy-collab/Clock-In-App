@@ -17,6 +17,11 @@ load_dotenv(ROOT_DIR / '.env')
 from core.database import connect_to_mongo, close_mongo_connection, get_database
 from core.config import get_settings
 from routers import auth_router, attendance_router, gps_router
+from routers.admin_dashboard import router as admin_dashboard_router
+from routers.admin_time_entries import router as admin_time_entries_router
+from routers.admin_users import router as admin_users_router
+from routers.admin_branches import router as admin_branches_router
+from routers.exports import router as exports_router
 
 settings = get_settings()
 
@@ -167,6 +172,11 @@ app.include_router(api_router)
 app.include_router(auth_router, prefix="/api")
 app.include_router(attendance_router, prefix="/api")
 app.include_router(gps_router, prefix="/api")
+app.include_router(admin_dashboard_router, prefix="/api")
+app.include_router(admin_time_entries_router, prefix="/api")
+app.include_router(admin_users_router, prefix="/api")
+app.include_router(admin_branches_router, prefix="/api")
+app.include_router(exports_router, prefix="/api")
 
 # CORS middleware
 app.add_middleware(
