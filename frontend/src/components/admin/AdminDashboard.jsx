@@ -11,7 +11,7 @@ import {
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || '';
 
-export default function AdminDashboard({ user, token, onLogout, onNavigate }) {
+export default function AdminDashboard({ user, token, onLogout, onNavigate, embedded }) {
   const [overview, setOverview] = useState(null);
   const [liveWorkers, setLiveWorkers] = useState([]);
   const [branches, setBranches] = useState([]);

@@ -1,19 +1,30 @@
 /**
- * Workforce Management - Worker Mobile MVP
- * Main App Component with PWA support
+ * Workforce Management - Main App Component
+ * Role-based routing: Workers -> WorkerDashboard, Admins -> AdminLayout
  */
 import React, { useState, useEffect } from 'react';
 import LoginScreen from './components/LoginScreen';
 import WorkerDashboard from './components/WorkerDashboard';
+import AdminLayout from './components/admin/AdminLayout';
+import AdminDashboard from './components/admin/AdminDashboard';
+import TimeEntriesManager from './components/admin/TimeEntriesManager';
+import ApprovalsManager from './components/admin/ApprovalsManager';
+import UsersManager from './components/admin/UsersManager';
+import BranchesManager from './components/admin/BranchesManager';
+import ExportsPage from './components/admin/ExportsPage';
+import AuditLogsViewer from './components/admin/AuditLogsViewer';
 import { authAPI } from './services/api';
 import { initOfflineDB, saveAuthToken, clearAuthToken } from './services/offline';
 import './App.css';
+
+const ADMIN_ROLES = ['SUPER_ADMIN', 'BRANCH_ADMIN', 'TEAM_LEADER'];
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [adminPage, setAdminPage] = useState('dashboard');
 
   // Initialize app
   useEffect(() => {
@@ -80,7 +91,7 @@ function App() {
 
   const handleInstall = async () => {
     if (!deferredPrompt) return;
-    
+
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     console.log('[App] Install prompt outcome:', outcome);
@@ -91,6 +102,8 @@ function App() {
   const handleLogin = async (userData, token) => {
     setUser(userData);
     await saveAuthToken(token);
+    // Reset admin page on login
+    setAdminPage('dashboard');
   };
 
   const handleLogout = async () => {
@@ -99,7 +112,11 @@ function App() {
     localStorage.removeItem('wfm_user');
     await clearAuthToken();
     setUser(null);
+    setAdminPage('dashboard');
   };
+
+  const isAdminUser = user && ADMIN_ROLES.includes(user.role);
+  const token = localStorage.getItem('wfm_token');
 
   // Loading screen
   if (loading) {
@@ -113,11 +130,75 @@ function App() {
     );
   }
 
+  // Render admin page content
+  const renderAdminContent = () => {
+    switch (adminPage) {
+      case 'dashboard':
+        return (
+          <AdminDashboard
+            user={user}
+            token={token}
+            onLogout={handleLogout}
+            onNavigate={setAdminPage}
+            embedded
+          />
+        );
+      case 'time-entries':
+        return (
+          <TimeEntriesManager
+            token={token}
+            user={user}
+            onBack={() => setAdminPage('dashboard')}
+            embedded
+          />
+        );
+      case 'approvals':
+        return <ApprovalsManager token={token} user={user} />;
+      case 'users':
+        return (
+          <UsersManager
+            token={token}
+            user={user}
+            onBack={() => setAdminPage('dashboard')}
+            embedded
+          />
+        );
+      case 'branches':
+        return <BranchesManager token={token} user={user} />;
+      case 'exports':
+        return <ExportsPage token={token} user={user} />;
+      case 'audit-logs':
+        return <AuditLogsViewer token={token} user={user} />;
+      default:
+        return (
+          <AdminDashboard
+            user={user}
+            token={token}
+            onLogout={handleLogout}
+            onNavigate={setAdminPage}
+            embedded
+          />
+        );
+    }
+  };
+
   return (
     <div className="App">
       {/* Main Content */}
       {user ? (
-        <WorkerDashboard user={user} onLogout={handleLogout} />
+        isAdminUser ? (
+          <AdminLayout
+            user={user}
+            token={token}
+            onLogout={handleLogout}
+            activePage={adminPage}
+            onNavigate={setAdminPage}
+          >
+            {renderAdminContent()}
+          </AdminLayout>
+        ) : (
+          <WorkerDashboard user={user} onLogout={handleLogout} />
+        )
       ) : (
         <LoginScreen onLogin={handleLogin} />
       )}

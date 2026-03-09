@@ -121,7 +121,6 @@ async def list_users(
         {
             "$project": {
                 "_id": 0,
-                "password_hash": 0,
                 "id": 1,
                 "email": 1,
                 "first_name": 1,

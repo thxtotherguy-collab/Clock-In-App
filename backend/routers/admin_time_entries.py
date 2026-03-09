@@ -145,6 +145,76 @@ async def list_time_entries(
     }
 
 
+@router.get("/pending-approval")
+async def get_pending_approvals(
+    branch_id: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Get time entries pending approval."""
+    db = get_database()
+    
+    if not has_permission(current_user.role, "time_entries.approve"):
+        raise ForbiddenException("Cannot view pending approvals")
+    
+    scope = get_role_data_scope(current_user.role)
+    
+    query = {"status": "completed"}
+    
+    if scope == DataScope.BRANCH:
+        query["branch_id"] = current_user.branch_id
+    elif scope == DataScope.TEAM:
+        query["team_id"] = current_user.team_id
+    elif branch_id and scope == DataScope.ALL:
+        query["branch_id"] = branch_id
+    
+    total = await db.time_entries.count_documents(query)
+    
+    pipeline = [
+        {"$match": query},
+        {"$sort": {"date": -1}},
+        {"$skip": (page - 1) * page_size},
+        {"$limit": page_size},
+        {
+            "$lookup": {
+                "from": "users",
+                "localField": "user_id",
+                "foreignField": "id",
+                "as": "user"
+            }
+        },
+        {"$unwind": {"path": "$user", "preserveNullAndEmptyArrays": True}},
+        {
+            "$project": {
+                "_id": 0,
+                "id": 1,
+                "user_id": 1,
+                "employee_name": {"$concat": ["$user.first_name", " ", "$user.last_name"]},
+                "employee_id": "$user.employee_id",
+                "date": 1,
+                "clock_in": 1,
+                "clock_out": 1,
+                "total_hours": 1,
+                "overtime_hours": 1,
+                "status": 1,
+                "branch_id": 1,
+                "job_site_id": 1
+            }
+        }
+    ]
+    
+    entries = await db.time_entries.aggregate(pipeline).to_list(page_size)
+    
+    return {
+        "entries": entries,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size
+    }
+
+
 @router.get("/{entry_id}")
 async def get_time_entry(
     entry_id: str,
@@ -433,72 +503,4 @@ async def bulk_approve_entries(
     return {
         "message": f"{result.modified_count} entries {bulk.action}d",
         "modified_count": result.modified_count
-    }
-
-
-@router.get("/pending-approval")
-async def get_pending_approvals(
-    branch_id: Optional[str] = None,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    current_user: TokenData = Depends(get_current_user)
-):
-    """Get time entries pending approval."""
-    db = get_database()
-    
-    if not has_permission(current_user.role, "time_entries.approve"):
-        raise ForbiddenException("Cannot view pending approvals")
-    
-    scope = get_role_data_scope(current_user.role)
-    
-    query = {"status": "completed"}
-    
-    if scope == DataScope.BRANCH:
-        query["branch_id"] = current_user.branch_id
-    elif scope == DataScope.TEAM:
-        query["team_id"] = current_user.team_id
-    elif branch_id and scope == DataScope.ALL:
-        query["branch_id"] = branch_id
-    
-    total = await db.time_entries.count_documents(query)
-    
-    pipeline = [
-        {"$match": query},
-        {"$sort": {"date": -1}},
-        {"$skip": (page - 1) * page_size},
-        {"$limit": page_size},
-        {
-            "$lookup": {
-                "from": "users",
-                "localField": "user_id",
-                "foreignField": "id",
-                "as": "user"
-            }
-        },
-        {"$unwind": {"path": "$user", "preserveNullAndEmptyArrays": True}},
-        {
-            "$project": {
-                "_id": 0,
-                "id": 1,
-                "user_id": 1,
-                "user_name": {"$concat": ["$user.first_name", " ", "$user.last_name"]},
-                "employee_id": "$user.employee_id",
-                "date": 1,
-                "clock_in": 1,
-                "clock_out": 1,
-                "total_hours": 1,
-                "overtime_hours": 1,
-                "flags": 1,
-                "is_manual_entry": 1
-            }
-        }
-    ]
-    
-    entries = await db.time_entries.aggregate(pipeline).to_list(page_size)
-    
-    return {
-        "entries": entries,
-        "total": total,
-        "page": page,
-        "page_size": page_size
     }

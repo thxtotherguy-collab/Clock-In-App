@@ -22,6 +22,7 @@ from routers.admin_time_entries import router as admin_time_entries_router
 from routers.admin_users import router as admin_users_router
 from routers.admin_branches import router as admin_branches_router
 from routers.exports import router as exports_router
+from routers.admin_audit import router as admin_audit_router
 
 settings = get_settings()
 
@@ -177,6 +178,7 @@ app.include_router(admin_time_entries_router, prefix="/api")
 app.include_router(admin_users_router, prefix="/api")
 app.include_router(admin_branches_router, prefix="/api")
 app.include_router(exports_router, prefix="/api")
+app.include_router(admin_audit_router, prefix="/api")
 
 # CORS middleware
 app.add_middleware(

@@ -1,368 +1,668 @@
 #!/usr/bin/env python3
 """
-Worker Mobile MVP Backend API Testing
-Tests all auth and attendance endpoints with focus on double clock-in prevention.
+Phase 4 Admin Dashboard MVP Backend API Testing
+Tests all critical endpoints with different role-based access controls.
 """
+
 import requests
-import sys
 import json
-from datetime import datetime
+import os
+import sys
+from datetime import datetime, timedelta
+from typing import Dict, Optional, Any
 
-class WorkerMVPTester:
-    def __init__(self, base_url="https://core-scaffold.preview.emergentagent.com"):
-        self.base_url = base_url
-        self.token = None
-        self.user_data = None
-        self.tests_run = 0
-        self.tests_passed = 0
-        self.active_entry_id = None
+# Base URL from environment
+BASE_URL = "https://22ab362b-ef92-48cd-892f-fb174db57b96.preview.emergentagent.com"
+API_BASE = f"{BASE_URL}/api"
 
-    def run_test(self, name, method, endpoint, expected_status, data=None, headers=None):
-        """Run a single API test"""
-        url = f"{self.base_url}/api/{endpoint}"
-        test_headers = {'Content-Type': 'application/json'}
+# Test credentials
+TEST_USERS = {
+    "SUPER_ADMIN": {"email": "admin@company.com", "password": "Admin123!"},
+    "BRANCH_ADMIN": {"email": "branchadmin@company.com", "password": "Admin123!"},
+    "WORKER": {"email": "worker1@company.com", "password": "Worker123!"}
+}
+
+class APITestRunner:
+    def __init__(self):
+        self.tokens = {}
+        self.test_results = {}
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Content-Type': 'application/json',
+            'User-Agent': 'Backend-Test-Suite/1.0'
+        })
+
+    def login_user(self, role: str) -> Dict[str, Any]:
+        """Login a user and store the token."""
+        print(f"🔐 Logging in as {role}...")
         
-        if self.token:
-            test_headers['Authorization'] = f'Bearer {self.token}'
-        
-        if headers:
-            test_headers.update(headers)
-
-        self.tests_run += 1
-        print(f"\n🔍 Testing {name}...")
-        print(f"   URL: {url}")
+        user_creds = TEST_USERS[role]
+        login_data = {
+            "email": user_creds["email"],
+            "password": user_creds["password"]
+        }
         
         try:
-            if method == 'GET':
-                response = requests.get(url, headers=test_headers, timeout=10)
-            elif method == 'POST':
-                response = requests.post(url, json=data, headers=test_headers, timeout=10)
-            elif method == 'PUT':
-                response = requests.put(url, json=data, headers=test_headers, timeout=10)
-
-            success = response.status_code == expected_status
-            if success:
-                self.tests_passed += 1
-                print(f"✅ Passed - Status: {response.status_code}")
-                try:
-                    response_data = response.json()
-                    if isinstance(response_data, dict) and len(str(response_data)) < 500:
-                        print(f"   Response: {response_data}")
-                    return True, response_data
-                except:
-                    return True, {}
+            response = self.session.post(f"{API_BASE}/auth/login", json=login_data)
+            
+            if response.status_code == 200:
+                data = response.json()
+                self.tokens[role] = {
+                    "access_token": data["access_token"],
+                    "user": data["user"]
+                }
+                print(f"✅ {role} login successful")
+                return data
             else:
-                print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
-                try:
-                    error_data = response.json()
-                    print(f"   Error: {error_data}")
-                except:
-                    print(f"   Raw Response: {response.text[:200]}")
-                return False, {}
-
+                print(f"❌ {role} login failed: {response.status_code} - {response.text}")
+                return None
         except Exception as e:
-            print(f"❌ Failed - Error: {str(e)}")
-            return False, {}
+            print(f"❌ {role} login error: {str(e)}")
+            return None
 
-    def test_register(self):
-        """Test user registration"""
-        timestamp = datetime.now().strftime("%H%M%S")
-        test_user = {
-            "email": f"worker_{timestamp}@test.com",
-            "password": "TestPass123!",
-            "first_name": "Test",
-            "last_name": "Worker",
-            "employee_id": f"EMP_{timestamp}"
+    def make_authenticated_request(self, method: str, endpoint: str, role: str, **kwargs) -> requests.Response:
+        """Make an authenticated request."""
+        if role not in self.tokens:
+            raise ValueError(f"No token found for role {role}")
+        
+        headers = {
+            "Authorization": f"Bearer {self.tokens[role]['access_token']}"
         }
         
-        success, response = self.run_test(
-            "User Registration",
-            "POST",
-            "auth/register",
-            200,
-            data=test_user
-        )
+        url = f"{API_BASE}{endpoint}"
         
-        if success and 'access_token' in response:
-            self.token = response['access_token']
-            self.user_data = response['user']
-            print(f"   Registered user: {self.user_data['email']}")
-            return True
-        return False
+        try:
+            response = self.session.request(method, url, headers=headers, **kwargs)
+            return response
+        except Exception as e:
+            print(f"❌ Request failed: {str(e)}")
+            raise
 
-    def test_login_invalid_credentials(self):
-        """Test login with invalid credentials"""
-        success, _ = self.run_test(
-            "Login with Invalid Credentials",
-            "POST",
-            "auth/login",
-            401,
-            data={"email": "invalid@test.com", "password": "wrongpass"}
-        )
-        return success
-
-    def test_get_user_info(self):
-        """Test getting current user info"""
-        if not self.token:
-            print("❌ Skipping - No auth token")
-            return False
-            
-        success, response = self.run_test(
-            "Get Current User Info",
-            "GET",
-            "auth/me",
-            200
-        )
+    def test_dashboard_overview(self, role: str) -> Dict[str, Any]:
+        """Test dashboard overview endpoint."""
+        print(f"\n📊 Testing Dashboard Overview as {role}")
         
-        if success and 'user' in response:
-            print(f"   User info retrieved: {response['user']['email']}")
-            return True
-        return False
-
-    def test_get_today_status_initial(self):
-        """Test initial today status (should not be clocked in)"""
-        if not self.token:
-            print("❌ Skipping - No auth token")
-            return False
+        try:
+            # Test basic overview
+            response = self.make_authenticated_request("GET", "/admin/dashboard/overview", role)
             
-        success, response = self.run_test(
-            "Get Today Status (Initial)",
-            "GET",
-            "attendance/today",
-            200
-        )
-        
-        if success:
-            is_clocked_in = response.get('is_clocked_in', False)
-            print(f"   Initially clocked in: {is_clocked_in}")
-            if is_clocked_in:
-                print("   ⚠️  User already clocked in - may affect double clock-in test")
-            return True
-        return False
-
-    def test_clock_in(self):
-        """Test clock in functionality"""
-        if not self.token:
-            print("❌ Skipping - No auth token")
-            return False
-            
-        clock_in_data = {
-            "method": "mobile_app",
-            "gps": {
-                "latitude": 37.7749,
-                "longitude": -122.4194,
-                "accuracy_meters": 10.0,
-                "captured_at": datetime.now().isoformat() + "Z"
+            result = {
+                "endpoint": "/admin/dashboard/overview",
+                "role": role,
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "data": None,
+                "error": None
             }
-        }
-        
-        success, response = self.run_test(
-            "Clock In",
-            "POST",
-            "attendance/clock-in",
-            200,
-            data=clock_in_data
-        )
-        
-        if success and 'id' in response:
-            self.active_entry_id = response['id']
-            print(f"   Clock in successful - Entry ID: {self.active_entry_id}")
-            return True
-        return False
-
-    def test_double_clock_in_prevention(self):
-        """Test double clock-in prevention (should return 409)"""
-        if not self.token:
-            print("❌ Skipping - No auth token")
-            return False
             
-        clock_in_data = {
-            "method": "mobile_app",
-            "gps": {
-                "latitude": 37.7749,
-                "longitude": -122.4194,
-                "accuracy_meters": 10.0,
-                "captured_at": datetime.now().isoformat() + "Z"
+            if response.status_code == 200:
+                data = response.json()
+                result["data"] = data
+                print(f"✅ Overview data received: {data.get('total_workers', 0)} workers, {data.get('total_hours_today', 0)} hours")
+                
+                # Test with branch filter if SUPER_ADMIN
+                if role == "SUPER_ADMIN":
+                    response_with_branch = self.make_authenticated_request(
+                        "GET", "/admin/dashboard/overview", role, params={"branch_id": "test_branch"}
+                    )
+                    print(f"   Branch filter test: {response_with_branch.status_code}")
+                    
+            elif response.status_code == 403:
+                result["error"] = "Forbidden - Expected for WORKER role"
+                print(f"🔒 Access denied (expected for WORKER): {response.status_code}")
+            else:
+                result["error"] = response.text
+                print(f"❌ Failed: {response.status_code} - {response.text}")
+            
+            return result
+            
+        except Exception as e:
+            return {
+                "endpoint": "/admin/dashboard/overview",
+                "role": role,
+                "status_code": 500,
+                "success": False,
+                "error": str(e)
             }
-        }
-        
-        success, response = self.run_test(
-            "Double Clock-In Prevention",
-            "POST",
-            "attendance/clock-in",
-            409,  # Should get conflict error
-            data=clock_in_data
-        )
-        
-        if success:
-            print("   ✅ Double clock-in correctly prevented")
-            return True
-        return False
 
-    def test_get_today_status_clocked_in(self):
-        """Test today status while clocked in"""
-        if not self.token:
-            print("❌ Skipping - No auth token")
-            return False
-            
-        success, response = self.run_test(
-            "Get Today Status (Clocked In)",
-            "GET",
-            "attendance/today",
-            200
-        )
+    def test_live_status(self, role: str) -> Dict[str, Any]:
+        """Test live status endpoint."""
+        print(f"\n👥 Testing Live Status as {role}")
         
-        if success:
-            is_clocked_in = response.get('is_clocked_in', False)
-            current_entry = response.get('current_entry')
-            print(f"   Is clocked in: {is_clocked_in}")
-            if current_entry:
-                print(f"   Current entry ID: {current_entry.get('id', 'N/A')}")
-            return is_clocked_in  # Should be True
-        return False
-
-    def test_clock_out(self):
-        """Test clock out functionality"""
-        if not self.token:
-            print("❌ Skipping - No auth token")
-            return False
+        try:
+            response = self.make_authenticated_request("GET", "/admin/dashboard/live-status", role)
             
-        clock_out_data = {
-            "method": "mobile_app",
-            "break_minutes": 0,
-            "gps": {
-                "latitude": 37.7749,
-                "longitude": -122.4194,
-                "accuracy_meters": 10.0,
-                "captured_at": datetime.now().isoformat() + "Z"
+            result = {
+                "endpoint": "/admin/dashboard/live-status",
+                "role": role,
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "data": None,
+                "error": None
             }
-        }
-        
-        success, response = self.run_test(
-            "Clock Out",
-            "POST",
-            "attendance/clock-out",
-            200,
-            data=clock_out_data
-        )
-        
-        if success and response.get('total_hours') is not None:
-            total_hours = response.get('total_hours', 0)
-            print(f"   Clock out successful - Total hours: {total_hours}")
-            return True
-        return False
-
-    def test_clock_out_when_not_clocked_in(self):
-        """Test clock out when not clocked in (should fail)"""
-        if not self.token:
-            print("❌ Skipping - No auth token")
-            return False
             
-        clock_out_data = {
-            "method": "mobile_app",
-            "break_minutes": 0
-        }
-        
-        success, response = self.run_test(
-            "Clock Out (Not Clocked In)",
-            "POST",
-            "attendance/clock-out",
-            400,  # Should get bad request
-            data=clock_out_data
-        )
-        
-        if success:
-            print("   ✅ Clock out correctly rejected when not clocked in")
-            return True
-        return False
-
-    def test_get_week_summary(self):
-        """Test week summary endpoint"""
-        if not self.token:
-            print("❌ Skipping - No auth token")
-            return False
+            if response.status_code == 200:
+                data = response.json()
+                result["data"] = data
+                print(f"✅ Live status: {data.get('count', 0)} active workers")
+            elif response.status_code == 403:
+                result["error"] = "Forbidden - Expected for WORKER role"
+                print(f"🔒 Access denied (expected for WORKER): {response.status_code}")
+            else:
+                result["error"] = response.text
+                print(f"❌ Failed: {response.status_code} - {response.text}")
             
-        success, response = self.run_test(
-            "Get Week Summary",
-            "GET",
-            "attendance/week-summary",
-            200
-        )
-        
-        if success:
-            total_hours = response.get('total_hours', 0)
-            days_worked = response.get('days_worked', 0)
-            print(f"   Week summary - Total: {total_hours}h, Days: {days_worked}")
-            return True
-        return False
+            return result
+            
+        except Exception as e:
+            return {
+                "endpoint": "/admin/dashboard/live-status", 
+                "role": role,
+                "status_code": 500,
+                "success": False,
+                "error": str(e)
+            }
 
-    def test_unauthorized_access(self):
-        """Test API access without token"""
-        # Temporarily remove token
-        original_token = self.token
-        self.token = None
+    def test_users_list(self, role: str) -> Dict[str, Any]:
+        """Test users list endpoint."""
+        print(f"\n👤 Testing Users List as {role}")
         
-        success, _ = self.run_test(
-            "Unauthorized Access (No Token)",
-            "GET",
-            "attendance/today",
-            401
-        )
+        try:
+            response = self.make_authenticated_request("GET", "/admin/users/list", role)
+            
+            result = {
+                "endpoint": "/admin/users/list",
+                "role": role,
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "data": None,
+                "error": None
+            }
+            
+            if response.status_code == 200:
+                data = response.json()
+                result["data"] = data
+                print(f"✅ Users list: {data.get('total', 0)} users, page {data.get('page', 1)}")
+                
+                # Test search functionality
+                search_response = self.make_authenticated_request(
+                    "GET", "/admin/users/list", role, params={"search": "admin"}
+                )
+                print(f"   Search test: {search_response.status_code}")
+                
+            elif response.status_code == 403:
+                result["error"] = "Forbidden - Expected for WORKER role"
+                print(f"🔒 Access denied (expected for WORKER): {response.status_code}")
+            else:
+                result["error"] = response.text
+                print(f"❌ Failed: {response.status_code} - {response.text}")
+            
+            return result
+            
+        except Exception as e:
+            return {
+                "endpoint": "/admin/users/list",
+                "role": role, 
+                "status_code": 500,
+                "success": False,
+                "error": str(e)
+            }
+
+    def test_branches_list(self, role: str) -> Dict[str, Any]:
+        """Test branches list endpoint."""
+        print(f"\n🏢 Testing Branches List as {role}")
         
-        # Restore token
-        self.token = original_token
+        try:
+            response = self.make_authenticated_request("GET", "/admin/branches/list", role)
+            
+            result = {
+                "endpoint": "/admin/branches/list",
+                "role": role,
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "data": None,
+                "error": None
+            }
+            
+            if response.status_code == 200:
+                data = response.json()
+                result["data"] = data
+                print(f"✅ Branches list: {len(data.get('branches', []))} branches")
+            elif response.status_code == 403:
+                result["error"] = "Forbidden - Expected for WORKER role"
+                print(f"🔒 Access denied (expected for WORKER): {response.status_code}")
+            else:
+                result["error"] = response.text
+                print(f"❌ Failed: {response.status_code} - {response.text}")
+            
+            return result
+            
+        except Exception as e:
+            return {
+                "endpoint": "/admin/branches/list",
+                "role": role,
+                "status_code": 500,
+                "success": False,
+                "error": str(e)
+            }
+
+    def test_time_entries_pending(self, role: str) -> Dict[str, Any]:
+        """Test pending time entries endpoint."""
+        print(f"\n⏰ Testing Time Entries Pending as {role}")
         
-        if success:
-            print("   ✅ Unauthorized access correctly rejected")
-            return True
-        return False
+        try:
+            response = self.make_authenticated_request("GET", "/admin/time-entries/pending-approval", role)
+            
+            result = {
+                "endpoint": "/admin/time-entries/pending-approval",
+                "role": role,
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "data": None,
+                "error": None
+            }
+            
+            if response.status_code == 200:
+                data = response.json()
+                result["data"] = data
+                print(f"✅ Pending entries: {data.get('total', 0)} entries")
+            elif response.status_code == 403:
+                result["error"] = "Forbidden - Expected for WORKER role"
+                print(f"🔒 Access denied (expected for WORKER): {response.status_code}")
+            else:
+                result["error"] = response.text
+                print(f"❌ Failed: {response.status_code} - {response.text}")
+            
+            return result
+            
+        except Exception as e:
+            return {
+                "endpoint": "/admin/time-entries/pending-approval",
+                "role": role,
+                "status_code": 500,
+                "success": False,
+                "error": str(e)
+            }
+
+    def test_csv_exports(self, role: str) -> Dict[str, Any]:
+        """Test CSV export endpoints."""
+        print(f"\n📄 Testing CSV Exports as {role}")
+        
+        results = []
+        
+        # Test timesheet CSV
+        try:
+            response = self.make_authenticated_request("GET", "/exports/timesheet/csv", role)
+            
+            result = {
+                "endpoint": "/exports/timesheet/csv",
+                "role": role,
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "content_type": response.headers.get('content-type', ''),
+                "error": None
+            }
+            
+            if response.status_code == 200:
+                print(f"✅ Timesheet CSV export successful ({len(response.content)} bytes)")
+                # Check if it's actually CSV
+                if 'text/csv' in response.headers.get('content-type', ''):
+                    result["is_csv"] = True
+                else:
+                    result["is_csv"] = False
+                    print("⚠️  Content type is not CSV")
+            elif response.status_code == 403:
+                result["error"] = "Forbidden - Expected for WORKER role"
+                print(f"🔒 Access denied (expected for WORKER): {response.status_code}")
+            else:
+                result["error"] = response.text
+                print(f"❌ Timesheet CSV failed: {response.status_code}")
+                
+            results.append(result)
+            
+        except Exception as e:
+            results.append({
+                "endpoint": "/exports/timesheet/csv",
+                "role": role,
+                "status_code": 500,
+                "success": False,
+                "error": str(e)
+            })
+        
+        # Test payroll CSV
+        try:
+            response = self.make_authenticated_request("GET", "/exports/payroll/csv", role)
+            
+            result = {
+                "endpoint": "/exports/payroll/csv",
+                "role": role,
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "content_type": response.headers.get('content-type', ''),
+                "error": None
+            }
+            
+            if response.status_code == 200:
+                print(f"✅ Payroll CSV export successful ({len(response.content)} bytes)")
+                if 'text/csv' in response.headers.get('content-type', ''):
+                    result["is_csv"] = True
+                else:
+                    result["is_csv"] = False
+                    print("⚠️  Content type is not CSV")
+            elif response.status_code == 403:
+                result["error"] = "Forbidden - Expected for WORKER role"
+                print(f"🔒 Access denied (expected for WORKER): {response.status_code}")
+            else:
+                result["error"] = response.text
+                print(f"❌ Payroll CSV failed: {response.status_code}")
+                
+            results.append(result)
+            
+        except Exception as e:
+            results.append({
+                "endpoint": "/exports/payroll/csv",
+                "role": role,
+                "status_code": 500,
+                "success": False,
+                "error": str(e)
+            })
+        
+        return results
+
+    def test_excel_exports(self, role: str) -> Dict[str, Any]:
+        """Test Excel export endpoints."""
+        print(f"\n📊 Testing Excel Exports as {role}")
+        
+        results = []
+        
+        # Test payroll Excel
+        try:
+            response = self.make_authenticated_request("GET", "/exports/payroll/excel", role)
+            
+            result = {
+                "endpoint": "/exports/payroll/excel",
+                "role": role,
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "content_type": response.headers.get('content-type', ''),
+                "error": None
+            }
+            
+            if response.status_code == 200:
+                print(f"✅ Payroll Excel export successful ({len(response.content)} bytes)")
+                # Check if it's actually Excel
+                if 'spreadsheetml' in response.headers.get('content-type', ''):
+                    result["is_excel"] = True
+                else:
+                    result["is_excel"] = False
+                    print("⚠️  Content type is not Excel")
+            elif response.status_code == 403:
+                result["error"] = "Forbidden - Expected for WORKER role"
+                print(f"🔒 Access denied (expected for WORKER): {response.status_code}")
+            else:
+                result["error"] = response.text
+                print(f"❌ Payroll Excel failed: {response.status_code}")
+                
+            results.append(result)
+            
+        except Exception as e:
+            results.append({
+                "endpoint": "/exports/payroll/excel",
+                "role": role,
+                "status_code": 500,
+                "success": False,
+                "error": str(e)
+            })
+        
+        # Test timesheet Excel
+        try:
+            response = self.make_authenticated_request("GET", "/exports/timesheet/excel", role)
+            
+            result = {
+                "endpoint": "/exports/timesheet/excel",
+                "role": role,
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "content_type": response.headers.get('content-type', ''),
+                "error": None
+            }
+            
+            if response.status_code == 200:
+                print(f"✅ Timesheet Excel export successful ({len(response.content)} bytes)")
+                if 'spreadsheetml' in response.headers.get('content-type', ''):
+                    result["is_excel"] = True
+                else:
+                    result["is_excel"] = False
+                    print("⚠️  Content type is not Excel")
+            elif response.status_code == 403:
+                result["error"] = "Forbidden - Expected for WORKER role"
+                print(f"🔒 Access denied (expected for WORKER): {response.status_code}")
+            else:
+                result["error"] = response.text
+                print(f"❌ Timesheet Excel failed: {response.status_code}")
+                
+            results.append(result)
+            
+        except Exception as e:
+            results.append({
+                "endpoint": "/exports/timesheet/excel",
+                "role": role,
+                "status_code": 500,
+                "success": False,
+                "error": str(e)
+            })
+        
+        return results
+
+    def test_audit_logs(self, role: str) -> Dict[str, Any]:
+        """Test audit logs endpoints."""
+        print(f"\n📋 Testing Audit Logs as {role}")
+        
+        results = []
+        
+        # Test audit logs list
+        try:
+            response = self.make_authenticated_request("GET", "/admin/audit-logs/list", role)
+            
+            result = {
+                "endpoint": "/admin/audit-logs/list",
+                "role": role,
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "data": None,
+                "error": None
+            }
+            
+            if response.status_code == 200:
+                data = response.json()
+                result["data"] = data
+                print(f"✅ Audit logs list: {data.get('total', 0)} logs")
+            elif response.status_code == 403:
+                result["error"] = "Forbidden - Expected for WORKER role"
+                print(f"🔒 Access denied (expected for WORKER): {response.status_code}")
+            else:
+                result["error"] = response.text
+                print(f"❌ Audit logs list failed: {response.status_code}")
+                
+            results.append(result)
+            
+        except Exception as e:
+            results.append({
+                "endpoint": "/admin/audit-logs/list",
+                "role": role,
+                "status_code": 500,
+                "success": False,
+                "error": str(e)
+            })
+        
+        # Test audit categories
+        try:
+            response = self.make_authenticated_request("GET", "/admin/audit-logs/categories", role)
+            
+            result = {
+                "endpoint": "/admin/audit-logs/categories",
+                "role": role,
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "data": None,
+                "error": None
+            }
+            
+            if response.status_code == 200:
+                data = response.json()
+                result["data"] = data
+                print(f"✅ Audit categories: {len(data.get('categories', []))} categories")
+            elif response.status_code == 403:
+                result["error"] = "Forbidden - Expected for WORKER role"
+                print(f"🔒 Access denied (expected for WORKER): {response.status_code}")
+            else:
+                result["error"] = response.text
+                print(f"❌ Audit categories failed: {response.status_code}")
+                
+            results.append(result)
+            
+        except Exception as e:
+            results.append({
+                "endpoint": "/admin/audit-logs/categories",
+                "role": role,
+                "status_code": 500,
+                "success": False,
+                "error": str(e)
+            })
+        
+        return results
+
+    def run_comprehensive_test(self):
+        """Run comprehensive API tests for all roles."""
+        print("=" * 80)
+        print("🚀 PHASE 4 ADMIN DASHBOARD MVP - BACKEND API TESTING")
+        print("=" * 80)
+        
+        # Login all users first
+        for role in TEST_USERS.keys():
+            login_result = self.login_user(role)
+            if not login_result:
+                print(f"❌ Failed to login {role} - skipping tests")
+                continue
+        
+        # Test all endpoints for each role
+        for role in self.tokens.keys():
+            print(f"\n" + "="*60)
+            print(f"🧪 TESTING ALL ENDPOINTS AS {role}")
+            print("="*60)
+            
+            # Dashboard Overview
+            self.test_results[f"dashboard_overview_{role}"] = self.test_dashboard_overview(role)
+            
+            # Live Status
+            self.test_results[f"live_status_{role}"] = self.test_live_status(role)
+            
+            # Users List
+            self.test_results[f"users_list_{role}"] = self.test_users_list(role)
+            
+            # Branches List
+            self.test_results[f"branches_list_{role}"] = self.test_branches_list(role)
+            
+            # Time Entries Pending
+            self.test_results[f"time_entries_pending_{role}"] = self.test_time_entries_pending(role)
+            
+            # CSV Exports
+            csv_results = self.test_csv_exports(role)
+            for i, result in enumerate(csv_results):
+                self.test_results[f"csv_export_{i}_{role}"] = result
+            
+            # Excel Exports
+            excel_results = self.test_excel_exports(role)
+            for i, result in enumerate(excel_results):
+                self.test_results[f"excel_export_{i}_{role}"] = result
+            
+            # Audit Logs
+            audit_results = self.test_audit_logs(role)
+            for i, result in enumerate(audit_results):
+                self.test_results[f"audit_logs_{i}_{role}"] = result
+
+    def generate_summary(self):
+        """Generate test summary."""
+        print("\n" + "="*80)
+        print("📊 TEST RESULTS SUMMARY")
+        print("="*80)
+        
+        total_tests = len(self.test_results)
+        successful_tests = len([r for r in self.test_results.values() if r.get("success", False)])
+        
+        print(f"Total Tests: {total_tests}")
+        print(f"Successful: {successful_tests}")
+        print(f"Failed: {total_tests - successful_tests}")
+        print(f"Success Rate: {(successful_tests/total_tests*100):.1f}%")
+        
+        print("\n🟢 SUCCESSFUL TESTS:")
+        for test_name, result in self.test_results.items():
+            if result.get("success", False):
+                print(f"   ✅ {test_name}: {result['endpoint']} ({result['role']})")
+        
+        print("\n🔴 FAILED TESTS:")
+        failed_count = 0
+        for test_name, result in self.test_results.items():
+            if not result.get("success", False):
+                failed_count += 1
+                error_msg = result.get("error", "Unknown error")
+                if "Forbidden" in error_msg and result.get("role") == "WORKER":
+                    print(f"   🔒 {test_name}: {result['endpoint']} - Access correctly restricted for WORKER")
+                else:
+                    print(f"   ❌ {test_name}: {result['endpoint']} ({result['role']}) - {error_msg}")
+        
+        print(f"\n📈 ANALYSIS:")
+        
+        # Check role-based access control
+        super_admin_success = len([r for k, r in self.test_results.items() if "SUPER_ADMIN" in k and r.get("success", False)])
+        branch_admin_success = len([r for k, r in self.test_results.items() if "BRANCH_ADMIN" in k and r.get("success", False)])
+        worker_forbidden = len([r for k, r in self.test_results.items() if "WORKER" in k and r.get("status_code") == 403])
+        
+        print(f"   🎯 SUPER_ADMIN successful operations: {super_admin_success}")
+        print(f"   🏢 BRANCH_ADMIN successful operations: {branch_admin_success}")
+        print(f"   🔒 WORKER correctly blocked operations: {worker_forbidden}")
+        
+        # Check export functionality
+        excel_exports = [r for k, r in self.test_results.items() if "excel_export" in k and r.get("success", False)]
+        csv_exports = [r for k, r in self.test_results.items() if "csv_export" in k and r.get("success", False)]
+        
+        print(f"   📊 Excel exports working: {len(excel_exports)}")
+        print(f"   📄 CSV exports working: {len(csv_exports)}")
+        
+        return {
+            "total_tests": total_tests,
+            "successful_tests": successful_tests,
+            "failed_tests": total_tests - successful_tests,
+            "success_rate": successful_tests/total_tests*100,
+            "super_admin_success": super_admin_success,
+            "branch_admin_success": branch_admin_success,
+            "worker_blocked": worker_forbidden,
+            "excel_working": len(excel_exports),
+            "csv_working": len(csv_exports)
+        }
+
 
 def main():
-    """Run all tests"""
-    print("🚀 Starting Worker Mobile MVP Backend Tests")
-    print("=" * 60)
+    """Main test execution."""
+    print("Starting Phase 4 Admin Dashboard MVP Backend API Tests...")
     
-    tester = WorkerMVPTester()
+    runner = APITestRunner()
+    runner.run_comprehensive_test()
+    summary = runner.generate_summary()
     
-    # Test sequence
-    test_results = []
+    print(f"\n{'='*80}")
+    print("✅ TESTING COMPLETE")
+    print("="*80)
     
-    print("\n📋 AUTHENTICATION TESTS")
-    test_results.append(tester.test_register())
-    test_results.append(tester.test_login_invalid_credentials())
-    test_results.append(tester.test_get_user_info())
-    test_results.append(tester.test_unauthorized_access())
-    
-    print("\n⏰ ATTENDANCE TESTS")
-    test_results.append(tester.test_get_today_status_initial())
-    test_results.append(tester.test_clock_in())
-    test_results.append(tester.test_double_clock_in_prevention())  # Critical test
-    test_results.append(tester.test_get_today_status_clocked_in())
-    test_results.append(tester.test_clock_out())
-    test_results.append(tester.test_clock_out_when_not_clocked_in())
-    test_results.append(tester.test_get_week_summary())
-    
-    # Results
-    print("\n" + "=" * 60)
-    print(f"📊 FINAL RESULTS")
-    print(f"   Tests Run: {tester.tests_run}")
-    print(f"   Tests Passed: {tester.tests_passed}")
-    print(f"   Success Rate: {(tester.tests_passed/tester.tests_run*100):.1f}%")
-    
-    if tester.user_data:
-        print(f"   Test User: {tester.user_data['email']}")
-    
-    # Critical features check
-    critical_passed = sum(test_results)
-    critical_total = len(test_results)
-    print(f"   Critical Features: {critical_passed}/{critical_total}")
-    
-    if critical_passed == critical_total:
-        print("🎉 ALL CRITICAL TESTS PASSED!")
-        return 0
-    else:
-        print("❌ Some critical tests failed")
-        return 1
+    return summary
+
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n🛑 Testing interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Testing failed with error: {str(e)}")
+        sys.exit(1)

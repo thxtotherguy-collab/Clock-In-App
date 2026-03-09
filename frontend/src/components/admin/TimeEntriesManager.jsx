@@ -10,7 +10,7 @@ import {
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || '';
 
-export default function TimeEntriesManager({ token, user, onBack }) {
+export default function TimeEntriesManager({ token, user, onBack, embedded }) {
   const [entries, setEntries] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);

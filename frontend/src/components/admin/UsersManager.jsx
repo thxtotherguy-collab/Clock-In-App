@@ -10,7 +10,7 @@ import {
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || '';
 
-export default function UsersManager({ token, user, onBack }) {
+export default function UsersManager({ token, user, onBack, embedded }) {
   const [users, setUsers] = useState([]);
   const [branches, setBranches] = useState([]);
   const [total, setTotal] = useState(0);
