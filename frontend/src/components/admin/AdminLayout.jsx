@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import {
   LayoutDashboard, Clock, CheckCircle, Users, Building2,
-  Download, FileText, Menu, X, LogOut, ChevronRight, Shield
+  Download, FileText, Menu, X, LogOut, ChevronRight, Shield, Mail
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { id: 'approvals', label: 'Approvals', icon: CheckCircle, description: 'Review timesheets' },
   { id: 'users', label: 'Workers', icon: Users, description: 'Manage employees' },
   { id: 'branches', label: 'Branches', icon: Building2, description: 'Locations & geofence', adminOnly: true },
+  { id: 'reports', label: 'Reports', icon: Mail, description: 'Automated emails' },
   { id: 'exports', label: 'Exports', icon: Download, description: 'CSV & Excel reports' },
   { id: 'audit-logs', label: 'Audit Logs', icon: FileText, description: 'System activity', adminOnly: true },
 ];

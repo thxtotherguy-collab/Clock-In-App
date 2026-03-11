@@ -23,6 +23,7 @@ from routers.admin_users import router as admin_users_router
 from routers.admin_branches import router as admin_branches_router
 from routers.exports import router as exports_router
 from routers.admin_audit import router as admin_audit_router
+from routers.reports import router as reports_router
 
 settings = get_settings()
 
@@ -41,8 +42,24 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Workforce Management System...")
     await connect_to_mongo(settings.mongo_url, settings.db_name)
     logger.info("Database connected")
+
+    # Initialize scheduler
+    try:
+        from services.scheduler_service import init_scheduler, shutdown_scheduler
+        db = get_database()
+        await init_scheduler(db)
+        logger.info("Scheduler initialized")
+    except Exception as e:
+        logger.warning(f"Scheduler init failed (non-critical): {e}")
+
     yield
+
     # Shutdown
+    try:
+        from services.scheduler_service import shutdown_scheduler
+        shutdown_scheduler()
+    except Exception:
+        pass
     await close_mongo_connection()
     logger.info("Database connection closed")
 
@@ -179,6 +196,7 @@ app.include_router(admin_users_router, prefix="/api")
 app.include_router(admin_branches_router, prefix="/api")
 app.include_router(exports_router, prefix="/api")
 app.include_router(admin_audit_router, prefix="/api")
+app.include_router(reports_router, prefix="/api")
 
 # CORS middleware
 app.add_middleware(

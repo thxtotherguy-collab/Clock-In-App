@@ -13,6 +13,7 @@ import UsersManager from './components/admin/UsersManager';
 import BranchesManager from './components/admin/BranchesManager';
 import ExportsPage from './components/admin/ExportsPage';
 import AuditLogsViewer from './components/admin/AuditLogsViewer';
+import ReportsManager from './components/admin/ReportsManager';
 import { authAPI } from './services/api';
 import { initOfflineDB, saveAuthToken, clearAuthToken } from './services/offline';
 import './App.css';
@@ -167,6 +168,8 @@ function App() {
         return <BranchesManager token={token} user={user} />;
       case 'exports':
         return <ExportsPage token={token} user={user} />;
+      case 'reports':
+        return <ReportsManager token={token} user={user} />;
       case 'audit-logs':
         return <AuditLogsViewer token={token} user={user} />;
       default:
