@@ -95,20 +95,31 @@ Production-ready web & mobile responsive workforce management application suppor
 - [x] Real-time GPS tracking
 - [x] Worker mobile interface
 
-### P1 - Core Features (Next)
-- [ ] Admin dashboard UI
-- [ ] User management CRUD (admin)
-- [ ] Branch management with geofence (admin)
-- [ ] Payroll CSV/Excel export
-- [ ] Attendance history & calendar
-- [ ] Manual attendance override
-- [ ] Late arrival reports
+### P1 - Core Features (Completed - Phase 4 & 5)
+- [x] Admin dashboard UI with sidebar navigation
+- [x] User management CRUD (admin)
+- [x] Branch management with geofence (admin)
+- [x] Payroll CSV/Excel export (openpyxl)
+- [x] Attendance history & time entries
+- [x] Manual attendance override with audit trail
+- [x] Late arrival reports
+- [x] Timesheet approval workflow (approve/reject/bulk)
+- [x] Role-based routing (admin vs worker views)
+- [x] Automated daily email reports (6PM trigger, MOCKED sender)
+- [x] Configurable recipients list (global, HR CC, Finance CC)
+- [x] SA BCEA overtime configuration (9hrs/day, 45hrs/week, 1.5x/2x rates)
+- [x] Report preview (data + HTML email template)
+- [x] Report run history & email logs
+- [x] Payroll summary with overtime calculations
+- [x] APScheduler-based automation (branch-specific distribution)
+- [x] Audit logs viewer
 
 ### P2 - Extended Features
 - [ ] Leave management
 - [ ] Task management
 - [ ] Push notifications
 - [ ] Advanced report builder
+- [ ] Real email integration (SendGrid/SMTP)
 
 ### P3 - Future
 - [ ] Vehicle tracking
@@ -116,10 +127,32 @@ Production-ready web & mobile responsive workforce management application suppor
 - [ ] Biometric integration
 - [ ] Multi-tenant support
 
+## Phase 4 - Admin Dashboard MVP (March 2026)
+- [x] AdminLayout with sidebar navigation (8 nav items)
+- [x] Role-based routing in App.js
+- [x] Dashboard overview (real-time stats, branch/date filters)
+- [x] Time entries management (list, edit modal, approve/reject)
+- [x] Approvals manager (dedicated queue, bulk actions)
+- [x] Workers CRUD (role/branch/status filters)
+- [x] Branches management (cards, create/edit, geofence, details)
+- [x] Export center (CSV + Excel: payroll, timesheet, attendance)
+- [x] Audit logs viewer (category/type/date filters)
+- [x] Branch admin data restriction
+
+## Phase 5 - Automated Reporting & Payroll Engine (March 2026)
+- [x] Report generation service (daily aggregation)
+- [x] Email service (MOCKED - professional HTML templates)
+- [x] APScheduler with 6PM UTC daily cron trigger
+- [x] Configurable recipients (global, per-branch, HR CC, Finance CC)
+- [x] "Send Report Now" manual trigger
+- [x] Report preview (data + HTML email)
+- [x] SA BCEA overtime configuration (configurable per branch)
+- [x] Payroll summary endpoint
+- [x] Scheduler status monitoring
+- [x] ReportsManager frontend with 4 tabs (Overview, Config, Overtime, History)
+
 ## Next Tasks
-1. **Phase 4: Admin Dashboard** - Branch admin & company admin interfaces
-2. User CRUD APIs with role-based filtering
-3. Branch CRUD with geofence management
-4. Payroll export (CSV/Excel)
-5. Attendance approval workflow
-6. Report generation
+1. **Phase 6: Leave Management** - Leave types, requests, approvals
+2. Push notifications
+3. Real email provider integration (SendGrid/SMTP)
+4. Advanced report builder
