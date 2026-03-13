@@ -1,406 +1,523 @@
-#!/usr/bin/env python3
 """
-Backend Testing Suite - Phase 5: Automated Reporting & Payroll Engine
-Tests all Report APIs with proper authentication and role-based access control.
+Backend API Testing for Phase 6 Security, Performance & Deployment Hardening
 
-Test Coverage:
-- Report configuration endpoints
-- Manual report triggering
-- Report preview (JSON and HTML)
-- Report history and email logs
-- SA BCEA overtime configuration
-- Payroll summary
-- Scheduler status
+Testing focus areas:
+1. Health Check Endpoints 
+2. Security Headers Verification
+3. Rate Limiting & Account Lockout
+4. Password Policy Enforcement
+5. JWT Token Revocation (Logout)
+6. Change Password Functionality
 """
-import asyncio
-import aiohttp
+import requests
 import json
-from typing import Dict, List
-
-# Base URLs and Authentication
-BASE_URL = "https://22ab362b-ef92-48cd-892f-fb174db57b96.preview.emergentagent.com"
-API_BASE = f"{BASE_URL}/api"
-
-# Test credentials from review request
-AUTH_CREDENTIALS = {
-    "SUPER_ADMIN": {"email": "admin@company.com", "password": "Admin123!"},
-    "BRANCH_ADMIN": {"email": "branchadmin@company.com", "password": "Admin123!"},
-    "WORKER": {"email": "worker1@company.com", "password": "Worker123!"}
-}
-
-# Global test state
-test_results = {}
-auth_tokens = {}
+import time
+from datetime import datetime
+from typing import Dict, Optional
 
 
-class TestRunner:
-    def __init__(self):
-        self.session = None
-        self.results = []
+class BackendTester:
+    def __init__(self, base_url: str):
+        self.base_url = base_url.rstrip('/')
+        self.api_url = f"{self.base_url}/api"
+        self.session = requests.Session()
+        self.admin_token = None
+        self.test_results = []
         
-    async def setup(self):
-        """Initialize HTTP session and authenticate all users."""
-        self.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=30),
-            connector=aiohttp.TCPConnector(ssl=False)
-        )
+        # Test credentials
+        self.admin_creds = {
+            "email": "admin@company.com", 
+            "password": "Admin123!"
+        }
         
-        # Authenticate all users
-        for role, creds in AUTH_CREDENTIALS.items():
-            try:
-                token = await self.authenticate(creds["email"], creds["password"])
-                auth_tokens[role] = token
-                self.log_result(f"AUTH-{role}", "✅ PASS", f"Authentication successful")
-            except Exception as e:
-                auth_tokens[role] = None
-                self.log_result(f"AUTH-{role}", "❌ FAIL", f"Authentication failed: {e}")
-        
-        print(f"\n🔐 Authentication completed: {len([t for t in auth_tokens.values() if t])} / {len(AUTH_CREDENTIALS)} successful\n")
-
-    async def authenticate(self, email: str, password: str) -> str:
-        """Authenticate user and return JWT token."""
-        async with self.session.post(
-            f"{API_BASE}/auth/login", 
-            json={"email": email, "password": password}
-        ) as resp:
-            if resp.status != 200:
-                text = await resp.text()
-                raise Exception(f"HTTP {resp.status}: {text}")
-            data = await resp.json()
-            return data.get("access_token")
-
-    def get_auth_headers(self, role: str) -> Dict:
-        """Get authorization headers for a role."""
-        token = auth_tokens.get(role)
-        if not token:
-            raise Exception(f"No token available for {role}")
-        return {"Authorization": f"Bearer {token}"}
-
-    async def test_endpoint(self, method: str, endpoint: str, role: str, 
-                          expected_status: int = 200, json_data: Dict = None, 
-                          test_name: str = None) -> Dict:
-        """Test an API endpoint with authentication."""
-        url = f"{API_BASE}{endpoint}"
-        test_name = test_name or f"{method} {endpoint} ({role})"
-        
+    def log_test(self, test_name: str, success: bool, details: str = "", response_data: dict = None):
+        """Log test results."""
+        result = {
+            "test": test_name,
+            "success": success,
+            "details": details,
+            "timestamp": datetime.now().isoformat(),
+            "response_data": response_data
+        }
+        self.test_results.append(result)
+        status = "✅ PASS" if success else "❌ FAIL"
+        print(f"{status} | {test_name}")
+        if details:
+            print(f"      Details: {details}")
+        if not success and response_data:
+            print(f"      Response: {response_data}")
+        print()
+    
+    def authenticate_admin(self) -> bool:
+        """Authenticate as admin user."""
         try:
-            headers = self.get_auth_headers(role)
+            response = self.session.post(
+                f"{self.api_url}/auth/login",
+                json=self.admin_creds,
+                timeout=10
+            )
             
-            # Make request
-            if method.upper() == "GET":
-                async with self.session.get(url, headers=headers) as resp:
-                    return await self.process_response(resp, test_name, expected_status)
-            elif method.upper() == "POST":
-                async with self.session.post(url, headers=headers, json=json_data) as resp:
-                    return await self.process_response(resp, test_name, expected_status)
-            elif method.upper() == "PUT":
-                async with self.session.put(url, headers=headers, json=json_data) as resp:
-                    return await self.process_response(resp, test_name, expected_status)
+            if response.status_code == 200:
+                data = response.json()
+                self.admin_token = data["access_token"]
+                self.session.headers.update({
+                    "Authorization": f"Bearer {self.admin_token}"
+                })
+                self.log_test(
+                    "Admin Authentication", 
+                    True, 
+                    f"Successfully authenticated as {self.admin_creds['email']}"
+                )
+                return True
             else:
-                raise Exception(f"Unsupported method: {method}")
+                self.log_test(
+                    "Admin Authentication", 
+                    False, 
+                    f"Failed with status {response.status_code}",
+                    response.json() if response.text else {}
+                )
+                return False
                 
         except Exception as e:
-            self.log_result(test_name, "❌ FAIL", f"Request failed: {e}")
-            return {"status": "error", "error": str(e)}
-
-    async def process_response(self, resp, test_name: str, expected_status: int) -> Dict:
-        """Process HTTP response and log results."""
-        status = resp.status
-        content_type = resp.headers.get('content-type', '')
+            self.log_test("Admin Authentication", False, f"Exception: {str(e)}")
+            return False
+    
+    def test_health_endpoints(self):
+        """Test all health check endpoints."""
+        print("🔍 TESTING HEALTH CHECK ENDPOINTS")
+        print("="*50)
         
+        # Test basic health endpoint
         try:
-            if 'application/json' in content_type:
-                data = await resp.json()
-            else:
-                data = await resp.text()
-        except:
-            data = await resp.text()
-        
-        if status == expected_status:
-            self.log_result(test_name, "✅ PASS", f"HTTP {status}, response received")
-            return {"status": "success", "data": data, "http_status": status}
-        else:
-            self.log_result(test_name, "❌ FAIL", f"Expected HTTP {expected_status}, got {status}: {str(data)[:200]}")
-            return {"status": "fail", "data": data, "http_status": status}
-
-    def log_result(self, test_name: str, status: str, details: str):
-        """Log test result."""
-        result = {"test": test_name, "status": status, "details": details}
-        self.results.append(result)
-        print(f"{status} {test_name}: {details}")
-
-    async def run_report_config_tests(self):
-        """Test report configuration endpoints."""
-        print("📊 Testing Report Configuration...")
-        
-        # Test GET /api/reports/config for all roles
-        await self.test_endpoint("GET", "/reports/config", "SUPER_ADMIN", 200, 
-                                test_name="Get report config (SUPER_ADMIN)")
-        await self.test_endpoint("GET", "/reports/config", "BRANCH_ADMIN", 200, 
-                                test_name="Get report config (BRANCH_ADMIN)")
-        await self.test_endpoint("GET", "/reports/config", "WORKER", 403, 
-                                test_name="Get report config (WORKER - should be blocked)")
-        
-        # Test PUT /api/reports/config
-        config_update = {
-            "global_recipients": ["test@test.com"],
-            "hr_cc": ["hr@test.com"],
-            "enabled": True
-        }
-        await self.test_endpoint("PUT", "/reports/config", "SUPER_ADMIN", 200, config_update,
-                                test_name="Update report config (SUPER_ADMIN)")
-        await self.test_endpoint("PUT", "/reports/config", "BRANCH_ADMIN", 200, config_update,
-                                test_name="Update report config (BRANCH_ADMIN)")
-        await self.test_endpoint("PUT", "/reports/config", "WORKER", 403, config_update,
-                                test_name="Update report config (WORKER - should be blocked)")
-
-    async def run_manual_report_tests(self):
-        """Test manual report sending."""
-        print("📧 Testing Manual Report Sending...")
-        
-        # Test POST /api/reports/send-now
-        send_request = {"branch_id": None}
-        result = await self.test_endpoint("POST", "/reports/send-now", "SUPER_ADMIN", 200, send_request,
-                                        test_name="Send report now (SUPER_ADMIN)")
-        
-        # Check if emails_sent is returned
-        if result.get("status") == "success" and "emails_sent" in str(result.get("data", {})):
-            self.log_result("Send report validation", "✅ PASS", "Response includes emails_sent count")
-        elif result.get("status") == "success":
-            self.log_result("Send report validation", "⚠️ WARN", f"Response format: {result.get('data', {})}")
-        
-        await self.test_endpoint("POST", "/reports/send-now", "BRANCH_ADMIN", 200, send_request,
-                                test_name="Send report now (BRANCH_ADMIN)")
-        await self.test_endpoint("POST", "/reports/send-now", "WORKER", 403, send_request,
-                                test_name="Send report now (WORKER - should be blocked)")
-
-    async def run_preview_tests(self):
-        """Test report preview endpoints."""
-        print("👀 Testing Report Previews...")
-        
-        # Test GET /api/reports/preview
-        await self.test_endpoint("GET", "/reports/preview", "SUPER_ADMIN", 200,
-                                test_name="Preview report data (SUPER_ADMIN)")
-        await self.test_endpoint("GET", "/reports/preview", "BRANCH_ADMIN", 200,
-                                test_name="Preview report data (BRANCH_ADMIN)")
-        await self.test_endpoint("GET", "/reports/preview", "WORKER", 403,
-                                test_name="Preview report data (WORKER - should be blocked)")
-        
-        # Test GET /api/reports/preview/html
-        result = await self.test_endpoint("GET", "/reports/preview/html", "SUPER_ADMIN", 200,
-                                        test_name="Preview HTML template (SUPER_ADMIN)")
-        
-        # Validate HTML response
-        if result.get("status") == "success":
-            html_content = result.get("data", "")
-            if isinstance(html_content, str) and "<!DOCTYPE html>" in html_content:
-                self.log_result("HTML template validation", "✅ PASS", "Valid HTML template returned")
-            else:
-                self.log_result("HTML template validation", "❌ FAIL", f"Invalid HTML format: {type(html_content)}")
-
-    async def run_history_tests(self):
-        """Test report history and email logs."""
-        print("📜 Testing Report History...")
-        
-        # Test GET /api/reports/history
-        await self.test_endpoint("GET", "/reports/history", "SUPER_ADMIN", 200,
-                                test_name="Get report history (SUPER_ADMIN)")
-        await self.test_endpoint("GET", "/reports/history", "BRANCH_ADMIN", 200,
-                                test_name="Get report history (BRANCH_ADMIN)")
-        await self.test_endpoint("GET", "/reports/history", "WORKER", 403,
-                                test_name="Get report history (WORKER - should be blocked)")
-        
-        # Test GET /api/reports/email-logs (should show mocked entries from send-now)
-        result = await self.test_endpoint("GET", "/reports/email-logs", "SUPER_ADMIN", 200,
-                                        test_name="Get email logs (SUPER_ADMIN)")
-        
-        # Check if email logs contain entries from send-now tests
-        if result.get("status") == "success":
-            data = result.get("data", {})
-            logs = data.get("logs", []) if isinstance(data, dict) else []
-            if logs:
-                self.log_result("Email logs validation", "✅ PASS", f"Found {len(logs)} email log entries")
-            else:
-                self.log_result("Email logs validation", "⚠️ WARN", "No email log entries found (may be expected)")
-
-    async def run_overtime_config_tests(self):
-        """Test SA BCEA overtime configuration."""
-        print("⏰ Testing Overtime Configuration...")
-        
-        # Test GET /api/reports/overtime-config
-        result = await self.test_endpoint("GET", "/reports/overtime-config", "SUPER_ADMIN", 200,
-                                        test_name="Get overtime config (SUPER_ADMIN)")
-        
-        # Validate SA BCEA defaults
-        if result.get("status") == "success":
-            data = result.get("data", {})
-            rules = data.get("rules", {}) if isinstance(data, dict) else {}
-            tiers = data.get("tiers", {}) if isinstance(data, dict) else {}
-            
-            # Check SA BCEA requirements
-            expected_checks = [
-                (rules.get("daily_threshold_5day") == 9.0, "9hrs daily threshold (5-day week)"),
-                (rules.get("weekly_threshold") == 45.0, "45hrs weekly threshold"),
-                (tiers.get("standard_ot", {}).get("multiplier") == 1.5, "1.5x overtime multiplier"),
-                (tiers.get("sunday", {}).get("multiplier") == 2.0, "2x Sunday multiplier")
-            ]
-            
-            for check, desc in expected_checks:
-                if check:
-                    self.log_result(f"SA BCEA - {desc}", "✅ PASS", "Correct SA BCEA default")
-                else:
-                    self.log_result(f"SA BCEA - {desc}", "❌ FAIL", f"Incorrect default: {rules}, {tiers}")
-        
-        await self.test_endpoint("GET", "/reports/overtime-config", "BRANCH_ADMIN", 200,
-                                test_name="Get overtime config (BRANCH_ADMIN)")
-        await self.test_endpoint("GET", "/reports/overtime-config", "WORKER", 403,
-                                test_name="Get overtime config (WORKER - should be blocked)")
-        
-        # Test PUT /api/reports/overtime-config (SUPER_ADMIN only)
-        ot_update = {
-            "weekly_threshold": 45,
-            "standard_ot_multiplier": 1.5
-        }
-        await self.test_endpoint("PUT", "/reports/overtime-config", "SUPER_ADMIN", 200, ot_update,
-                                test_name="Update overtime config (SUPER_ADMIN)")
-        await self.test_endpoint("PUT", "/reports/overtime-config", "BRANCH_ADMIN", 403, ot_update,
-                                test_name="Update overtime config (BRANCH_ADMIN - should be blocked)")
-
-    async def run_payroll_summary_tests(self):
-        """Test payroll summary endpoint."""
-        print("💰 Testing Payroll Summary...")
-        
-        # Test GET /api/reports/payroll-summary
-        await self.test_endpoint("GET", "/reports/payroll-summary", "SUPER_ADMIN", 200,
-                                test_name="Get payroll summary (SUPER_ADMIN)")
-        await self.test_endpoint("GET", "/reports/payroll-summary", "BRANCH_ADMIN", 200,
-                                test_name="Get payroll summary (BRANCH_ADMIN)")
-        await self.test_endpoint("GET", "/reports/payroll-summary", "WORKER", 403,
-                                test_name="Get payroll summary (WORKER - should be blocked)")
-
-    async def run_scheduler_tests(self):
-        """Test scheduler status endpoint."""
-        print("🕐 Testing Scheduler Status...")
-        
-        # Test GET /api/reports/scheduler/status (SUPER_ADMIN only)
-        result = await self.test_endpoint("GET", "/reports/scheduler/status", "SUPER_ADMIN", 200,
-                                        test_name="Get scheduler status (SUPER_ADMIN)")
-        
-        # Check if scheduler is running with daily_report job
-        if result.get("status") == "success":
-            data = result.get("data", {})
-            if isinstance(data, dict):
-                running = data.get("running", False)
-                jobs = data.get("jobs", [])
+            response = requests.get(f"{self.api_url}/health", timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                expected_keys = ["status", "uptime_seconds"]
+                has_keys = all(key in data for key in expected_keys)
                 
-                if running:
-                    self.log_result("Scheduler running", "✅ PASS", "Scheduler is active")
-                else:
-                    self.log_result("Scheduler running", "❌ FAIL", "Scheduler is not running")
+                self.log_test(
+                    "Health Check - Basic Liveness",
+                    has_keys and data.get("status") == "healthy",
+                    f"Status: {data.get('status')}, Uptime: {data.get('uptime_seconds')}s",
+                    data
+                )
+            else:
+                self.log_test(
+                    "Health Check - Basic Liveness",
+                    False,
+                    f"HTTP {response.status_code}",
+                    response.json() if response.text else {}
+                )
+        except Exception as e:
+            self.log_test("Health Check - Basic Liveness", False, f"Exception: {str(e)}")
+        
+        # Test readiness endpoint
+        try:
+            response = requests.get(f"{self.api_url}/health/ready", timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                checks = data.get("checks", {})
+                db_status = checks.get("database", {}).get("status")
+                scheduler_status = checks.get("scheduler", {}).get("status")
                 
-                # Check for daily report job
-                daily_job = any("daily" in job.get("name", "").lower() for job in jobs if isinstance(job, dict))
-                if daily_job:
-                    self.log_result("Daily job configured", "✅ PASS", "Daily report job found in scheduler")
+                success = (
+                    data.get("status") == "ready" and
+                    db_status == "connected" and
+                    scheduler_status == "running"
+                )
+                
+                self.log_test(
+                    "Health Check - Readiness Probe",
+                    success,
+                    f"Overall: {data.get('status')}, DB: {db_status}, Scheduler: {scheduler_status}",
+                    data
+                )
+            else:
+                self.log_test(
+                    "Health Check - Readiness Probe",
+                    False,
+                    f"HTTP {response.status_code}",
+                    response.json() if response.text else {}
+                )
+        except Exception as e:
+            self.log_test("Health Check - Readiness Probe", False, f"Exception: {str(e)}")
+        
+        # Test deep health endpoint
+        try:
+            response = requests.get(f"{self.api_url}/health/deep", timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                checks = data.get("checks", {})
+                db_check = checks.get("database", {})
+                memory_check = checks.get("memory", {})
+                scheduler_check = checks.get("scheduler", {})
+                
+                has_stats = (
+                    "active_users" in db_check.get("stats", {}) and
+                    "memory" in checks and
+                    "scheduler" in checks
+                )
+                
+                self.log_test(
+                    "Health Check - Deep Probe with Stats",
+                    has_stats and data.get("status") == "healthy",
+                    f"DB stats: {db_check.get('stats')}, Memory: {memory_check}, Scheduler: {scheduler_check.get('status')}",
+                    data
+                )
+            else:
+                self.log_test(
+                    "Health Check - Deep Probe with Stats",
+                    False,
+                    f"HTTP {response.status_code}",
+                    response.json() if response.text else {}
+                )
+        except Exception as e:
+            self.log_test("Health Check - Deep Probe with Stats", False, f"Exception: {str(e)}")
+    
+    def test_security_headers(self):
+        """Test security headers on API responses."""
+        print("🔍 TESTING SECURITY HEADERS")
+        print("="*50)
+        
+        # Test on a simple API call
+        try:
+            response = requests.get(f"{self.api_url}/health", timeout=10)
+            headers = response.headers
+            
+            expected_headers = {
+                "X-Frame-Options": "DENY",
+                "X-Content-Type-Options": "nosniff", 
+                "X-XSS-Protection": "1; mode=block",
+                "X-Request-ID": None,  # Should exist but value varies
+                "X-Process-Time": None,  # Should exist but value varies
+                "Cache-Control": "no-store, no-cache, must-revalidate, private"
+            }
+            
+            missing_headers = []
+            present_headers = {}
+            
+            for header, expected_value in expected_headers.items():
+                if header in headers:
+                    present_headers[header] = headers[header]
+                    if expected_value and headers[header] != expected_value:
+                        missing_headers.append(f"{header} (expected '{expected_value}', got '{headers[header]}')")
                 else:
-                    self.log_result("Daily job configured", "❌ FAIL", f"No daily job found: {jobs}")
-        
-        await self.test_endpoint("GET", "/reports/scheduler/status", "BRANCH_ADMIN", 403,
-                                test_name="Get scheduler status (BRANCH_ADMIN - should be blocked)")
-
-    async def run_role_scoping_tests(self):
-        """Test that BRANCH_ADMIN is properly scoped to their branch."""
-        print("🔒 Testing Role-based Data Scoping...")
-        
-        # Get report config as BRANCH_ADMIN to check scoping
-        result = await self.test_endpoint("GET", "/reports/preview", "BRANCH_ADMIN", 200,
-                                        test_name="BRANCH_ADMIN data scoping check")
-        
-        if result.get("status") == "success":
-            self.log_result("BRANCH_ADMIN scoping", "✅ PASS", "BRANCH_ADMIN can access scoped report data")
-
-    async def cleanup(self):
-        """Close HTTP session."""
-        if self.session:
-            await self.session.close()
-
-    def generate_summary(self):
-        """Generate test summary."""
-        passed = len([r for r in self.results if "✅ PASS" in r["status"]])
-        failed = len([r for r in self.results if "❌ FAIL" in r["status"]])
-        warnings = len([r for r in self.results if "⚠️ WARN" in r["status"]])
-        total = len(self.results)
-        
-        success_rate = (passed / total * 100) if total > 0 else 0
-        
-        print(f"\n" + "="*80)
-        print(f"🧪 PHASE 5 BACKEND TEST SUMMARY")
-        print(f"="*80)
-        print(f"📊 Total Tests: {total}")
-        print(f"✅ Passed: {passed}")
-        print(f"❌ Failed: {failed}")
-        print(f"⚠️ Warnings: {warnings}")
-        print(f"📈 Success Rate: {success_rate:.1f}%")
-        print(f"="*80)
-        
-        if failed > 0:
-            print(f"\n❌ FAILED TESTS:")
-            for result in self.results:
-                if "❌ FAIL" in result["status"]:
-                    print(f"  • {result['test']}: {result['details']}")
-        
-        if warnings > 0:
-            print(f"\n⚠️ WARNINGS:")
-            for result in self.results:
-                if "⚠️ WARN" in result["status"]:
-                    print(f"  • {result['test']}: {result['details']}")
-        
-        return {
-            "total": total,
-            "passed": passed,
-            "failed": failed,
-            "warnings": warnings,
-            "success_rate": success_rate,
-            "results": self.results
-        }
-
-
-async def main():
-    """Main test execution."""
-    print("🚀 Starting Phase 5 - Automated Reporting & Payroll Engine Backend Tests")
-    print(f"🌐 Base URL: {BASE_URL}")
-    print(f"📡 API Base: {API_BASE}")
-    print("="*80)
+                    missing_headers.append(header)
+            
+            success = len(missing_headers) == 0
+            details = f"Present: {present_headers}"
+            if missing_headers:
+                details += f" | Missing/Wrong: {missing_headers}"
+            
+            self.log_test(
+                "Security Headers Verification",
+                success,
+                details,
+                {"headers": dict(headers)}
+            )
+            
+        except Exception as e:
+            self.log_test("Security Headers Verification", False, f"Exception: {str(e)}")
     
-    runner = TestRunner()
+    def test_rate_limiting(self):
+        """Test rate limiting with multiple wrong login attempts."""
+        print("🔍 TESTING RATE LIMITING & ACCOUNT LOCKOUT")
+        print("="*50)
+        
+        test_email = "admin@company.com"
+        wrong_password = "WrongPassword123!"
+        
+        # First, test 5 wrong login attempts (should all be 401)
+        for i in range(1, 6):
+            try:
+                response = requests.post(
+                    f"{self.api_url}/auth/login",
+                    json={"email": test_email, "password": wrong_password},
+                    timeout=10
+                )
+                
+                success = response.status_code == 401
+                self.log_test(
+                    f"Rate Limiting - Wrong Login Attempt {i}/5",
+                    success,
+                    f"HTTP {response.status_code} (expected 401)",
+                    response.json() if response.text else {}
+                )
+                
+                if not success:
+                    break
+                    
+                time.sleep(0.5)  # Small delay between attempts
+                
+            except Exception as e:
+                self.log_test(f"Rate Limiting - Wrong Login Attempt {i}/5", False, f"Exception: {str(e)}")
+                break
+        
+        # Now test the 6th attempt (should be 429 - Too Many Requests)
+        try:
+            response = requests.post(
+                f"{self.api_url}/auth/login",
+                json={"email": test_email, "password": wrong_password},
+                timeout=10
+            )
+            
+            success = response.status_code == 429
+            self.log_test(
+                "Rate Limiting - 6th Wrong Attempt (Should be 429)",
+                success,
+                f"HTTP {response.status_code} (expected 429 - Too Many Requests)",
+                response.json() if response.text else {}
+            )
+            
+        except Exception as e:
+            self.log_test("Rate Limiting - 6th Wrong Attempt (Should be 429)", False, f"Exception: {str(e)}")
+        
+        # Test that even correct password is blocked after lockout
+        try:
+            response = requests.post(
+                f"{self.api_url}/auth/login",
+                json={"email": test_email, "password": self.admin_creds["password"]},
+                timeout=10
+            )
+            
+            success = response.status_code == 429
+            self.log_test(
+                "Rate Limiting - Correct Password After Lockout (Should be 429)",
+                success,
+                f"HTTP {response.status_code} (expected 429 - Account locked)",
+                response.json() if response.text else {}
+            )
+            
+        except Exception as e:
+            self.log_test("Rate Limiting - Correct Password After Lockout (Should be 429)", False, f"Exception: {str(e)}")
     
-    try:
-        # Setup and authentication
-        await runner.setup()
+    def test_password_policy(self):
+        """Test password policy enforcement during registration."""
+        print("🔍 TESTING PASSWORD POLICY ENFORCEMENT")
+        print("="*50)
+        
+        weak_passwords = [
+            ("short", "Too short"),
+            ("nouppercase1!", "No uppercase letter"),
+            ("NOLOWERCASE1!", "No lowercase letter"),
+            ("NoDigits!!", "No digit"),
+            ("NoSpecial1", "No special character")
+        ]
+        
+        for password, description in weak_passwords:
+            try:
+                response = requests.post(
+                    f"{self.api_url}/auth/register",
+                    json={
+                        "email": f"test_{int(time.time())}@example.com",
+                        "password": password,
+                        "first_name": "Test",
+                        "last_name": "User"
+                    },
+                    timeout=10
+                )
+                
+                # Should fail with 400 due to weak password
+                success = response.status_code == 400
+                error_msg = ""
+                if response.text:
+                    try:
+                        error_data = response.json()
+                        error_msg = error_data.get("detail", "")
+                    except:
+                        error_msg = response.text
+                
+                self.log_test(
+                    f"Password Policy - {description}",
+                    success,
+                    f"HTTP {response.status_code}, Error: {error_msg}",
+                    response.json() if response.text else {}
+                )
+                
+            except Exception as e:
+                self.log_test(f"Password Policy - {description}", False, f"Exception: {str(e)}")
+    
+    def test_token_revocation_logout(self):
+        """Test JWT token revocation via logout."""
+        print("🔍 TESTING TOKEN REVOCATION (LOGOUT)")
+        print("="*50)
+        
+        # First, get a fresh token
+        try:
+            response = requests.post(
+                f"{self.api_url}/auth/login",
+                json=self.admin_creds,
+                timeout=10
+            )
+            
+            if response.status_code != 200:
+                self.log_test("Token Revocation - Get Fresh Token", False, f"Login failed: HTTP {response.status_code}")
+                return
+                
+            token_data = response.json()
+            test_token = token_data["access_token"]
+            
+            # Test logout (should succeed)
+            logout_response = requests.post(
+                f"{self.api_url}/auth/logout",
+                headers={"Authorization": f"Bearer {test_token}"},
+                timeout=10
+            )
+            
+            logout_success = logout_response.status_code == 200
+            self.log_test(
+                "Token Revocation - Logout Request",
+                logout_success,
+                f"HTTP {logout_response.status_code}",
+                logout_response.json() if logout_response.text else {}
+            )
+            
+            # Now try to use the same token (should fail with 401)
+            if logout_success:
+                test_response = requests.get(
+                    f"{self.api_url}/auth/me",
+                    headers={"Authorization": f"Bearer {test_token}"},
+                    timeout=10
+                )
+                
+                revoke_success = test_response.status_code == 401
+                self.log_test(
+                    "Token Revocation - Use Revoked Token (Should Fail)",
+                    revoke_success,
+                    f"HTTP {test_response.status_code} (expected 401)",
+                    test_response.json() if test_response.text else {}
+                )
+                
+        except Exception as e:
+            self.log_test("Token Revocation - Logout", False, f"Exception: {str(e)}")
+    
+    def test_change_password(self):
+        """Test change password functionality with policy validation."""
+        print("🔍 TESTING CHANGE PASSWORD")
+        print("="*50)
+        
+        # Ensure we have a valid token
+        if not self.admin_token:
+            if not self.authenticate_admin():
+                self.log_test("Change Password - Authentication Required", False, "Could not authenticate admin")
+                return
+        
+        # Test changing password to a new valid password
+        new_password = "NewAdmin456!"
+        try:
+            response = self.session.post(
+                f"{self.api_url}/auth/change-password",
+                json={
+                    "current_password": self.admin_creds["password"],
+                    "new_password": new_password
+                },
+                timeout=10
+            )
+            
+            change_success = response.status_code == 200
+            self.log_test(
+                "Change Password - Valid New Password",
+                change_success,
+                f"HTTP {response.status_code}",
+                response.json() if response.text else {}
+            )
+            
+            if change_success:
+                # Test login with new password
+                login_response = requests.post(
+                    f"{self.api_url}/auth/login",
+                    json={"email": self.admin_creds["email"], "password": new_password},
+                    timeout=10
+                )
+                
+                new_login_success = login_response.status_code == 200
+                self.log_test(
+                    "Change Password - Login with New Password",
+                    new_login_success,
+                    f"HTTP {login_response.status_code}",
+                    login_response.json() if login_response.text else {}
+                )
+                
+                # Change back to original password
+                if new_login_success:
+                    new_token = login_response.json()["access_token"]
+                    restore_response = requests.post(
+                        f"{self.api_url}/auth/change-password",
+                        json={
+                            "current_password": new_password,
+                            "new_password": self.admin_creds["password"]
+                        },
+                        headers={"Authorization": f"Bearer {new_token}"},
+                        timeout=10
+                    )
+                    
+                    restore_success = restore_response.status_code == 200
+                    self.log_test(
+                        "Change Password - Restore Original Password",
+                        restore_success,
+                        f"HTTP {restore_response.status_code}",
+                        restore_response.json() if restore_response.text else {}
+                    )
+                    
+        except Exception as e:
+            self.log_test("Change Password", False, f"Exception: {str(e)}")
+    
+    def run_all_tests(self):
+        """Run all Phase 6 security tests."""
+        print("🚀 STARTING PHASE 6 SECURITY TESTING")
+        print("="*60)
+        print(f"Backend URL: {self.api_url}")
+        print(f"Test Started: {datetime.now().isoformat()}")
+        print("="*60)
+        print()
+        
+        # Authenticate first
+        if not self.authenticate_admin():
+            print("❌ Cannot proceed without authentication")
+            return
         
         # Run all test suites
-        await runner.run_report_config_tests()
-        await runner.run_manual_report_tests()
-        await runner.run_preview_tests()
-        await runner.run_history_tests()
-        await runner.run_overtime_config_tests()
-        await runner.run_payroll_summary_tests()
-        await runner.run_scheduler_tests()
-        await runner.run_role_scoping_tests()
+        self.test_health_endpoints()
+        self.test_security_headers()
+        self.test_rate_limiting()
+        self.test_password_policy()
+        self.test_token_revocation_logout()
+        self.test_change_password()
         
-        # Generate summary
-        summary = runner.generate_summary()
+        # Summary
+        total_tests = len(self.test_results)
+        passed_tests = sum(1 for test in self.test_results if test["success"])
+        failed_tests = total_tests - passed_tests
+        success_rate = (passed_tests / total_tests) * 100 if total_tests > 0 else 0
         
-        return summary
+        print("="*60)
+        print("📊 PHASE 6 SECURITY TESTING SUMMARY")
+        print("="*60)
+        print(f"Total Tests: {total_tests}")
+        print(f"✅ Passed: {passed_tests}")
+        print(f"❌ Failed: {failed_tests}")
+        print(f"📈 Success Rate: {success_rate:.1f}%")
+        print()
         
-    except Exception as e:
-        print(f"\n💥 CRITICAL ERROR: {e}")
-        runner.log_result("Test Suite", "❌ CRITICAL", f"Test suite failed: {e}")
-        return {"error": str(e), "results": runner.results}
-    
-    finally:
-        await runner.cleanup()
+        # List failures
+        if failed_tests > 0:
+            print("❌ FAILED TESTS:")
+            for test in self.test_results:
+                if not test["success"]:
+                    print(f"   • {test['test']}: {test['details']}")
+            print()
+        
+        print(f"Test Completed: {datetime.now().isoformat()}")
+        print("="*60)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Read backend URL from environment
+    backend_url = "https://timesheet-dashboard-4.preview.emergentagent.com"
+    
+    print(f"Phase 6 Security Testing")
+    print(f"Backend URL: {backend_url}/api")
+    print()
+    
+    tester = BackendTester(backend_url)
+    tester.run_all_tests()

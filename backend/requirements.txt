@@ -127,3 +127,5 @@ openpyxl==3.1.5
 et-xmlfile==2.0.0
 APScheduler==3.11.2
 tzlocal==5.3.1
+slowapi==0.1.9
+limits==5.8.0
